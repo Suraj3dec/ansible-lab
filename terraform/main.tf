@@ -126,7 +126,7 @@ data "aws_ami" "ubuntu" {
 # 7. Provision Ansible Control Instance
 resource "aws_instance" "control" {
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = "t3.micro"
+  instance_type          = "t2.micro"
   key_name               = aws_key_pair.aws_key.key_name
   vpc_security_group_ids = [aws_security_group.lab_sg.id]
   subnet_id              = aws_subnet.lab_subnet.id
@@ -137,7 +137,7 @@ resource "aws_instance" "control" {
 resource "aws_instance" "managed" {
   count                  = 2
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = "t3.micro"
+  instance_type          = "t2.micro"
   key_name               = aws_key_pair.aws_key.key_name
   vpc_security_group_ids = [aws_security_group.lab_sg.id]
   subnet_id              = aws_subnet.lab_subnet.id
