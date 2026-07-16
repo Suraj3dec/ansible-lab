@@ -1,0 +1,37 @@
+# ansible/site.yml
+---
+- name: "Configure Lab Environment"
+  hosts: all
+  become: true
+  tasks:
+    - name: "Ensure OS packages are fully updated"
+      apt:
+        update_cache: yes
+        upgrade: dist
+        autoremove: yes
+      when: ansible_os_family == "Debian"
+
+    - name: "Install utility tools"
+      apt:
+        name:
+          - curl
+          - git
+          - unzip
+          - htop
+        state: present
+      when: ansible_os_family == "Debian"
+
+- name: "Configure Web Server on Managed Nodes Only"
+  hosts: managed
+  become: true
+  tasks:
+    - name: "Install Apache Web Server"
+      apt:
+        name: apache2
+        state: present
+
+    - name: "Ensure Apache is Running"
+      service:
+        name: apache2
+        state: started
+        enabled: yes
