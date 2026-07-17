@@ -35,16 +35,16 @@ resource "aws_vpc" "lab_vpc" {
   tags = { Name = "ansible-lab-vpc" }
 }
 
-# 2. Public Subnet
+# 2. Private Subnet (No auto public IP)
 resource "aws_subnet" "lab_subnet" {
   vpc_id                  = aws_vpc.lab_vpc.id
   cidr_block              = "10.0.1.0/24"
-  map_public_ip_on_launch = true
+  map_public_ip_on_launch = false
   availability_zone       = "us-east-1a"
   tags                    = { Name = "ansible-lab-subnet" }
 }
 
-# 3. Internet Gateway & Routes
+# 3. Internet Gateway & Routes (required only for package updates/egress)
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.lab_vpc.id
   tags   = { Name = "ansible-lab-igw" }
@@ -64,17 +64,18 @@ resource "aws_route_table_association" "rta" {
   route_table_id = aws_route_table.rt.id
 }
 
-# 4. Security Group (Open port 22 for Lab, secure with SSH keys)
+# 4. Security Group (Open port 22 internally, closed to public internet)
 resource "aws_security_group" "lab_sg" {
   name        = "ansible-lab-sg"
-  description = "Allow inbound SSH"
+  description = "Secure private SSH group"
   vpc_id      = aws_vpc.lab_vpc.id
 
+  # Allow SSH strictly from within the VPC (e.g. from EICE endpoint)
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["10.0.0.0/16"]
   }
 
   ingress {
@@ -92,7 +93,14 @@ resource "aws_security_group" "lab_sg" {
   }
 }
 
-# 5. Generate Dynamic SSH Key Pair
+# 5. EC2 Instance Connect Endpoint (EICE) - 100% Free Tunneling Gateway
+resource "aws_ec2_instance_connect_endpoint" "eice" {
+  subnet_id          = aws_subnet.lab_subnet.id
+  security_group_ids = [aws_security_group.lab_sg.id]
+  tags               = { Name = "ansible-lab-eice" }
+}
+
+# 6. Generate Dynamic SSH Key Pair
 resource "tls_private_key" "ssh_key" {
   algorithm = "RSA"
   rsa_bits  = 4096
@@ -109,7 +117,7 @@ resource "local_sensitive_file" "private_key" {
   file_permission = "0600"
 }
 
-# 6. Fetch Ubuntu AMI
+# 7. Fetch Ubuntu AMI
 data "aws_ami" "ubuntu" {
   most_recent = true
   filter {
@@ -123,32 +131,34 @@ data "aws_ami" "ubuntu" {
   owners = ["099720109477"] # Canonical
 }
 
-# 7. Provision Ansible Control Instance
+# 8. Provision Private Ansible Control Instance (No Public IP)
 resource "aws_instance" "control" {
-  ami                    = data.aws_ami.ubuntu.id
-  instance_type          = "t2.micro"
-  key_name               = aws_key_pair.aws_key.key_name
-  vpc_security_group_ids = [aws_security_group.lab_sg.id]
-  subnet_id              = aws_subnet.lab_subnet.id
-  tags                   = { Name = "ansible-control-node" }
+  ami                         = data.aws_ami.ubuntu.id
+  instance_type               = "t2.micro"
+  key_name                    = aws_key_pair.aws_key.key_name
+  vpc_security_group_ids      = [aws_security_group.lab_sg.id]
+  subnet_id                   = aws_subnet.lab_subnet.id
+  associate_public_ip_address = false
+  tags                        = { Name = "ansible-control-node" }
 }
 
-# 8. Provision 2 Managed Node Instances
+# 9. Provision 2 Private Managed Node Instances (No Public IPs)
 resource "aws_instance" "managed" {
-  count                  = 2
-  ami                    = data.aws_ami.ubuntu.id
-  instance_type          = "t2.micro"
-  key_name               = aws_key_pair.aws_key.key_name
-  vpc_security_group_ids = [aws_security_group.lab_sg.id]
-  subnet_id              = aws_subnet.lab_subnet.id
-  tags                   = { Name = "ansible-managed-node-${count.index + 1}" }
+  count                       = 2
+  ami                         = data.aws_ami.ubuntu.id
+  instance_type               = "t2.micro"
+  key_name                    = aws_key_pair.aws_key.key_name
+  vpc_security_group_ids      = [aws_security_group.lab_sg.id]
+  subnet_id                   = aws_subnet.lab_subnet.id
+  associate_public_ip_address = false
+  tags                        = { Name = "ansible-managed-node-${count.index + 1}" }
 }
 
-# 9. Dynamically Generate Ansible Inventory File (using templatefile)
+# 10. Dynamically Generate Ansible Inventory File (using Instance IDs!)
 resource "local_file" "ansible_inventory" {
   filename = "${path.module}/inventory.ini"
   content  = templatefile("${path.module}/templates/inventory.tpl", {
-    control_ip = aws_instance.control.public_ip,
-    node_ips   = aws_instance.managed[*].public_ip
+    control_id = aws_instance.control.id,
+    node_ids   = aws_instance.managed[*].id
   })
 }
