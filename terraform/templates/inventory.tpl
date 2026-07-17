@@ -7,4 +7,4 @@ managed-node-${index + 1} ansible_host=${id} ansible_user=ubuntu
 %{ endfor ~}
 
 [all:vars]
-ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyCommand="aws ec2-instance-connect open-tunnel --instance-id %h --port %p --region us-east-1"'
+ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyCommand="aws ec2-instance-connect open-tunnel --instance-id %h --remote-port %p --region us-east-1"'
